@@ -24,6 +24,8 @@ parser.add_argument('-d', '--data', default='celeba', type=str,
                     help=('Specify dataset. '
                           'Currently CelebA and LSUN is supported'))
 
+parser.add_argument("--checkpoint", type=str, default=None)                          
+
 generator = Generator(code_size, n_label).cuda()
 discriminator = Discriminator(n_label).cuda()
 g_running = Generator(code_size, n_label).cuda()
@@ -67,8 +69,8 @@ def celeba_loader(path):
     def loader(transform):
         data = datasets.ImageFolder(path, transform=transform)
         data_loader = DataLoader(data, shuffle=True, batch_size=batch_size,
-                                 num_workers=4)
-
+                                 num_workers=2)
+        print(len(data_loader))
         return data_loader
 
     return loader
@@ -141,7 +143,7 @@ def train(generator, discriminator, loader):
             real_image, step, alpha)
         real_predict = real_predict.mean() \
             - 0.001 * (real_predict ** 2).mean()
-        real_predict.backward(mone)
+        real_predict.backward(torch.tensor(-1, dtype=torch.float))
 
         fake_image = generator(
             Variable(torch.randn(b_size, code_size)).cuda(),
@@ -149,7 +151,7 @@ def train(generator, discriminator, loader):
         fake_predict, fake_class_predict = discriminator(
             fake_image, step, alpha)
         fake_predict = fake_predict.mean()
-        fake_predict.backward(one)
+        fake_predict.backward(torch.tensor(1, dtype=torch.float))
 
         eps = torch.rand(b_size, 1, 1, 1).cuda()
         x_hat = eps * real_image.data + (1 - eps) * fake_image.data
@@ -161,8 +163,8 @@ def train(generator, discriminator, loader):
                          .norm(2, dim=1) - 1)**2).mean()
         grad_penalty = 10 * grad_penalty
         grad_penalty.backward()
-        grad_loss_val = grad_penalty.data[0]
-        disc_loss_val = (real_predict - fake_predict).data[0]
+        grad_loss_val = grad_penalty.data
+        disc_loss_val = (real_predict - fake_predict)
 
         d_optimizer.step()
 
@@ -182,7 +184,7 @@ def train(generator, discriminator, loader):
             predict, class_predict = discriminator(fake_image, step, alpha)
 
             loss = -predict.mean()
-            gen_loss_val = loss.data[0]
+            gen_loss_val = loss.data
 
             loss.backward()
             g_optimizer.step()
@@ -200,13 +202,18 @@ def train(generator, discriminator, loader):
                     input_class, step, alpha).data.cpu())
             utils.save_image(
                 torch.cat(images, 0),
-                f'sample/{str(i + 1).zfill(6)}.png',
+                f'/content/drive/MyDrive/progressive_checkpoint_rosinality/samples/{str(i + 1).zfill(6)}.png',
                 nrow=n_label * 10,
                 normalize=True,
                 range=(-1, 1))
 
         if (i + 1) % 10000 == 0:
-            torch.save(g_running, f'checkpoint/{str(i + 1).zfill(6)}.model')
+            torch.save({
+              "gen_model": generator.state_dict(),
+              "gen_optim": g_optimizer.state_dict(),
+              "disc_model": discriminator.state_dict(),
+              "disc_optim": d_optimizer.state_dict(),
+            }, f'/content/drive/MyDrive/progressive_checkpoint_rosinality/{str(i + 1).zfill(6)}')
 
         pbar.set_description(
             (f'{i + 1}; G: {gen_loss_val:.5f}; D: {disc_loss_val:.5f};'
@@ -222,5 +229,12 @@ if __name__ == '__main__':
 
     elif args.data == 'lsun':
         loader = lsun_loader(args.path)
+
+    if args.checkpoint != None:
+      ckpt = torch.load(args.checkpoint)
+      generator.load_state_dict(ckpt["gen_model"])
+      discriminator.load_state_dict(ckpt["disc_model"])
+      g_optimizer.load_state_dict(ckpt["gen_optim"])
+      d_optimizer.load_state_dict(ckpt["disc_optim"])
 
     train(generator, discriminator, loader)
