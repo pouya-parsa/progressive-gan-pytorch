@@ -90,10 +90,9 @@ def sample_data(dataloader, image_size=4):
         yield img, label
 
 
-def train(generator, discriminator, loader):
-    step = 0
+def train(generator, discriminator, loader, step, alpha, iteration):
     dataset = sample_data(loader, 4 * 2 ** step)
-    pbar = tqdm(range(600000))
+    pbar = tqdm(range(iteration, 600000))
 
     requires_grad(generator, False)
     requires_grad(discriminator, True)
@@ -102,10 +101,8 @@ def train(generator, discriminator, loader):
     gen_loss_val = 0
     grad_loss_val = 0
 
-    alpha = 0
     one = torch.FloatTensor([1]).cuda()
     mone = one * -1
-    iteration = 0
     stabilize = False
 
     for i in pbar:
@@ -207,12 +204,15 @@ def train(generator, discriminator, loader):
                 normalize=True,
                 range=(-1, 1))
 
-        if (i + 1) % 10000 == 0:
+        if (i + 1) % 5000 == 0:
             torch.save({
               "gen_model": generator.state_dict(),
               "gen_optim": g_optimizer.state_dict(),
               "disc_model": discriminator.state_dict(),
               "disc_optim": d_optimizer.state_dict(),
+              "alpha": alpha,
+              "iteration": i,
+              "step": step,
             }, f'/content/drive/MyDrive/progressive_checkpoint_rosinality/{str(i + 1).zfill(6)}')
 
         pbar.set_description(
@@ -230,11 +230,20 @@ if __name__ == '__main__':
     elif args.data == 'lsun':
         loader = lsun_loader(args.path)
 
+    step = 0
+    iteration = 0
+    alpha = 0
+
     if args.checkpoint != None:
       ckpt = torch.load(args.checkpoint)
       generator.load_state_dict(ckpt["gen_model"])
       discriminator.load_state_dict(ckpt["disc_model"])
       g_optimizer.load_state_dict(ckpt["gen_optim"])
       d_optimizer.load_state_dict(ckpt["disc_optim"])
+      g_running.load_state_dict(ckpt["gen_model"])
+      step = ckpt["step"]
+      alpha = ckpt["alpha"]
+      iteration = ckpt["iteration"]
+      print("Loaded")
 
-    train(generator, discriminator, loader)
+    train(generator, discriminator, loader, step, alpha, iteration)
