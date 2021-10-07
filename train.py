@@ -43,7 +43,8 @@ def requires_grad(model, flag=True):
     for p in model.parameters():
         p.requires_grad = flag
 
-
+# accumulate(g_running, generator)
+# accumulate(g_running, generator, 0)
 def accumulate(model1, model2, decay=0.999):
     par1 = dict(model1.named_parameters())
     par2 = dict(model2.named_parameters())
@@ -206,7 +207,7 @@ def train(generator, discriminator, loader, step, alpha, iteration):
 
         if (i + 1) % 5000 == 0:
             torch.save({
-              "gen_model": generator.state_dict(),
+              "gen_model": g_running.state_dict(),
               "gen_optim": g_optimizer.state_dict(),
               "disc_model": discriminator.state_dict(),
               "disc_optim": d_optimizer.state_dict(),
